@@ -31,7 +31,7 @@ async def send_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# ၂။ ခလုတ်နှိပ်သည့်အခါများကို ထိန်းချုပ်မည့် Function (စာအုပ်ပါ ခလုတ် ၆ ခု)
+# ၂။ ခလုတ်နှိပ်သည့်အခါများကို ထိန်းချုပ်မည့် Function
 async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -39,7 +39,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if query.data == "help_guide":
         help_text = (
             "📖 <b>Red Cat Studio Bot အသုံးပြုနည်း အသေးစိတ် လမ်းညွှန်</b>\n\n"
-            "ဗီဒီယို လင့်ခ် သို့မဟုတ် ဖိုင်ပို့လိုက်ပါက ဗီဒီယို Preview နှင့်အတူ အောက်ပါ တည်းဖြတ်ရန် ခလုတ်များ ပေါ်လာပါမည် -"
+            "ဗီဒီယို လင့်ခ် သို့မဟုတ် ဖိုင်ပို့လိုက်ပါက ဗီဒီယို Preview နှင့်အတူ အောက်ပါ တည်းဖြတ်ရန် ခလုတ်များ ပေါ်လာပါမည်."
         )
         await query.message.reply_text(text=help_text, parse_mode="HTML")
     
@@ -65,10 +65,11 @@ def download_video(url: str) -> str:
     outtmpl = os.path.join(download_folder, "video_temp.%(ext)s")
 
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'format': 'best',
         'outtmpl': outtmpl,
         'quiet': True,
         'no_warnings': True,
+        'geo_bypass': True,
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
