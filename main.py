@@ -31,7 +31,7 @@ async def send_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# ၂။ "အသုံးပြုနည်း လမ်းညွှန်" ခလုတ်နှိပ်သည့်အခါ
+# ၂။ ခလုတ်နှိပ်သည့်အခါများကို ထိန်းချုပ်မည့် Function
 async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -44,9 +44,16 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             "၂️⃣ <b>Video File ဖြင့် ပြုလုပ်ခြင်း:</b>\n"
             "• ဖုန်း/ကွန်ပျူတာ ထဲရှိ ဗီဒီယိုဖိုင်ကို Bot ထံ တိုက်ရိုက် Upload လုပ်ပေးပါ။\n\n"
             "၃️⃣ <b>Processing ပြုလုပ်ခြင်း:</b>\n"
-            "• Bot မှ ဗီဒီယိုကို အလိုအလျောက် ရယူပြီး Processing ပြုလုပ်ပေးပါမည်။"
+            "• ဗီဒီယို ရောက်လာပါက Edit လုပ်ရန် ခလုတ်များ ပေါ်လာပါမည်။"
         )
         await query.message.reply_text(text=help_text, parse_mode="HTML")
+    
+    elif query.data == "add_text":
+        await query.message.reply_text("✍️ စာသားထည့်သွင်းခြင်း လုပ်ငန်းစဉ် ဆက်လုပ်မည်။", parse_mode="HTML")
+    elif query.data == "add_blur":
+        await query.message.reply_text("🛡️ Blur ပြုလုပ်ခြင်း လုပ်ငန်းစဉ် ဆက်လုပ်မည်။", parse_mode="HTML")
+    elif query.data == "make_recap":
+        await query.message.reply_text("✂️ Movie Recap ဇာတ်လမ်းထုတ်ခြင်း လုပ်ငန်းစဉ် ဆက်လုပ်မည်။", parse_mode="HTML")
 
 # ၃။ Video ဒေါင်းလုပ်ဆွဲပြီး နာမည်သစ်ပေးမည့် Function (yt-dlp)
 def download_video(url: str) -> str:
@@ -54,7 +61,6 @@ def download_video(url: str) -> str:
     if not os.path.exists(download_folder):
         os.makedirs(download_folder)
 
-    # နာမည်ရှုပ်မသွားအောင် ရိုးရိုးရှင်းရှင်း output template သုံးမည်
     outtmpl = os.path.join(download_folder, "video_temp.%(ext)s")
 
     ydl_opts = {
@@ -68,8 +74,6 @@ def download_video(url: str) -> str:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
         
-        # mp4 ဖြစ်အောင် သေချာစစ်ပြီး နာမည်ပြောင်းမည်
-        base, ext = os.path.splitext(filename)
         final_filename = os.path.join(download_folder, "downloaded_video.mp4")
         
         if os.path.exists(final_filename):
@@ -78,10 +82,9 @@ def download_video(url: str) -> str:
         os.rename(filename, final_filename)
         return final_filename
 
-# ၄။ Link ပို့လာပါက ဒေါင်းလုပ်ဆွဲမည့် Function
+# ၄။ Link ပို့လာပါက ဒေါင်းလုပ်ဆွဲပြီး ဗီဒီယိုနှင့် ခလုတ်များ ပြန်ပို့ရန်
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text.strip()
-    
     url_pattern = re.compile(r'https?://[^\s]+')
     
     if url_pattern.search(user_text):
@@ -89,23 +92,62 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         try:
             file_path = download_video(user_text)
-            await status_msg.edit_text(f"✅ <b>ဒေါင်းလုပ်ဆွဲပြီးပါပြီ!</b>\nဖိုင်သိမ်းဆည်းရာနေရာ: <code>{file_path}</code>", parse_mode="HTML")
+            await status_msg.delete()
+            
+            # Edit လုပ်ရန် ခလုတ်များ
+            keyboard = [
+                [InlineKeyboardButton("✍️ စာသားထည့်ရန်", callback_data="add_text"),
+                 InlineKeyboardButton("🛡️ Blur လုပ်ရန်", callback_data="add_blur")],
+                [InlineKeyboardButton("✂️ Recap ပြုလုပ်ရန်", callback_data="make_recap")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # ဗီဒီယိုကို တကယ်ပြန်ပို့ခြင်း
+            with open(file_path, 'rb') as video_file:
+                await update.message.reply_video(
+                    video=video_file,
+                    caption="✅ <b>ဗီဒီယို ဒေါင်းလုပ်ဆွဲပြီးပါပြီ!</b>\nအောက်ပါတို့မှ လိုအပ်သည်ကို ရွေးချယ်ပါ -",
+                    parse_mode="HTML",
+                    reply_markup=reply_markup
+                )
         except Exception as e:
             await status_msg.edit_text(f"❌ <b>ဒေါင်းလုပ်ဆွဲရာတွင် အမှားအယွင်းရှိပါသည်:</b> {str(e)}", parse_mode="HTML")
     else:
         await send_welcome(update, context)
 
-# ၅။ Video File ပို့လာပါက ဖမ်းမည့် Function
+# ၅။ Video File တိုက်ရိုက်တင်လာပါက သိမ်းဆည်းပြီး ဗီဒီယိုနှင့် ခလုတ်များ ပြန်ပို့ရန်
 async def handle_video_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video = update.message.video or update.message.document
-    file_size_mb = round(video.file_size / (1024 * 1024), 2) if video.file_size else 0
+    status_msg = await update.message.reply_text("⏳ <b>ဗီဒီယိုဖိုင်ကို သိမ်းဆည်းနေပါသည်...</b>", parse_mode="HTML")
 
-    response_text = (
-        f"🎥 <b>ဗီဒီယိုဖိုင် ရရှိပါပြီ!</b>\n\n"
-        f"📦 <b>File Size:</b> {file_size_mb} MB\n\n"
-        f"⏳ Processing စတင်ရန် ပြင်ဆင်နေပါသည်..."
-    )
-    await update.message.reply_text(text=response_text, parse_mode="HTML")
+    download_folder = "downloads"
+    if not os.path.exists(download_folder):
+        os.makedirs(download_folder)
+    
+    final_filename = os.path.join(download_folder, "downloaded_video.mp4")
+
+    # Telegram ဆာဗာမှ ဗီဒီယိုဖိုင်ကို ရယူပြီး downloaded_video.mp4 အဖြစ် သိမ်းမည်
+    file = await context.bot.get_file(video.file_id)
+    await file.download_to_drive(final_filename)
+    
+    await status_msg.delete()
+
+    # Edit လုပ်ရန် ခလုတ်များ
+    keyboard = [
+        [InlineKeyboardButton("✍️ စာသားထည့်ရန်", callback_data="add_text"),
+         InlineKeyboardButton("🛡️ Blur လုပ်ရန်", callback_data="add_blur")],
+        [InlineKeyboardButton("✂️ Recap ပြုလုပ်ရန်", callback_data="make_recap")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # ဗီဒီယိုကို တကယ်ပြန်ပို့ခြင်း
+    with open(final_filename, 'rb') as video_file:
+        await update.message.reply_video(
+            video=video_file,
+            caption="🎥 <b>ဗီဒီယိုဖိုင် လက်ခံရရှိပါပြီ!</b>\nအောက်ပါတို့မှ လိုအပ်သည်ကို ရွေးချယ်ပါ -",
+            parse_mode="HTML",
+            reply_markup=reply_markup
+        )
 
 # ၆။ Main Function
 def main():
