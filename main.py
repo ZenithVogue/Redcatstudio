@@ -31,7 +31,7 @@ async def send_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# ၂။ ခလုတ်နှိပ်သည့်အခါများကို ထိန်းချုပ်မည့် Function
+# ၂။ ခလုတ်နှိပ်သည့်အခါများကို ထိန်းချုပ်မည့် Function (စာအုပ်ပါ ခလုတ် ၆ ခု)
 async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -39,21 +39,22 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if query.data == "help_guide":
         help_text = (
             "📖 <b>Red Cat Studio Bot အသုံးပြုနည်း အသေးစိတ် လမ်းညွှန်</b>\n\n"
-            "၁️⃣ <b>Link ဖြင့် ဗီဒီယို ပြုလုပ်ခြင်း:</b>\n"
-            "• YouTube, TikTok သို့မဟုတ် RedNote မှ ဗီဒီယို Link ကို Copy ယူပြီး ပို့ပေးပါ။\n\n"
-            "၂️⃣ <b>Video File ဖြင့် ပြုလုပ်ခြင်း:</b>\n"
-            "• ဖုန်း/ကွန်ပျူတာ ထဲရှိ ဗီဒီယိုဖိုင်ကို Bot ထံ တိုက်ရိုက် Upload လုပ်ပေးပါ။\n\n"
-            "၃️⃣ <b>Processing ပြုလုပ်ခြင်း:</b>\n"
-            "• ဗီဒီယို ရောက်လာပါက Edit လုပ်ရန် ခလုတ်များ ပေါ်လာပါမည်။"
+            "ဗီဒီယို လင့်ခ် သို့မဟုတ် ဖိုင်ပို့လိုက်ပါက ဗီဒီယို Preview နှင့်အတူ အောက်ပါ တည်းဖြတ်ရန် ခလုတ်များ ပေါ်လာပါမည် -"
         )
         await query.message.reply_text(text=help_text, parse_mode="HTML")
     
-    elif query.data == "add_text":
-        await query.message.reply_text("✍️ စာသားထည့်သွင်းခြင်း လုပ်ငန်းစဉ် ဆက်လုပ်မည်။", parse_mode="HTML")
-    elif query.data == "add_blur":
-        await query.message.reply_text("🛡️ Blur ပြုလုပ်ခြင်း လုပ်ငန်းစဉ် ဆက်လုပ်မည်။", parse_mode="HTML")
-    elif query.data == "make_recap":
-        await query.message.reply_text("✂️ Movie Recap ဇာတ်လမ်းထုတ်ခြင်း လုပ်ငန်းစဉ် ဆက်လုပ်မည်။", parse_mode="HTML")
+    elif query.data == "blur_btn":
+        await query.message.reply_text("🛡️ **Blur Button:** ဗီဒီယိုထဲရှိ စာသားဆိုးများကို Blur လုပ်ပေးမည့် လုပ်ဆောင်ချက်။", parse_mode="HTML")
+    elif query.data == "text_btn":
+        await query.message.reply_text("✍️ **စာသား Button:** ဗီဒီယိုပေါ်တွင် စာသားများ ပေါ်လာစေရန် လုပ်ဆောင်ချက်။", parse_mode="HTML")
+    elif query.data == "font_btn":
+        await query.message.reply_text("🔤 **မြန်မာစာသ် font Button:** Font အမျိုးအစားနှင့် နောက်ခံ ပုံစံများကို ရွေးချယ်ရန်။", parse_mode="HTML")
+    elif query.data == "speed_btn":
+        await query.message.reply_text("⏩ **စာသ် speed Button:** ဗီဒီယို အမြန်နှုန်း (Speed) ကို ချိန်ညှိရန်။", parse_mode="HTML")
+    elif query.data == "mirror_btn":
+        await query.message.reply_text("🔄 **Mirror Button:** ဗီဒီယိုကို ဘယ်ညာ တစောင်း (Mirror) လှည့်ရန်။", parse_mode="HTML")
+    elif query.data == "watermark_btn":
+        await query.message.reply_text("💧 **Add Your Watermark Button:** ကိုယ်ပိုင် Logo သို့မဟုတ် Watermark ထည့်သွင်းရန်။", parse_mode="HTML")
 
 # ၃။ Video ဒေါင်းလုပ်ဆွဲပြီး နာမည်သစ်ပေးမည့် Function (yt-dlp)
 def download_video(url: str) -> str:
@@ -82,7 +83,33 @@ def download_video(url: str) -> str:
         os.rename(filename, final_filename)
         return final_filename
 
-# ၄။ Link ပို့လာပါက ဒေါင်းလုပ်ဆွဲပြီး ဗီဒီယိုနှင့် ခလုတ်များ ပြန်ပို့ရန်
+# ဗီဒီယိုနှင့်အတူ ခလုတ် ၆ ခုကို ပြန်ပို့ပေးမည့် Helper Function
+async def send_video_with_editor_buttons(update: Update, file_path: str):
+    keyboard = [
+        [
+            InlineKeyboardButton("1️⃣ Blur", callback_data="blur_btn"),
+            InlineKeyboardButton("2️⃣ စာသား", callback_data="text_btn")
+        ],
+        [
+            InlineKeyboardButton("3️⃣ မြန်မာစာ font", callback_data="font_btn"),
+            InlineKeyboardButton("4️⃣ စာသ် speed", callback_data="speed_btn")
+        ],
+        [
+            InlineKeyboardButton("5️⃣ mirror", callback_data="mirror_btn"),
+            InlineKeyboardButton("6️⃣ Watermark", callback_data="watermark_btn")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    with open(file_path, 'rb') as video_file:
+        await update.message.reply_video(
+            video=video_file,
+            caption="🎬 <b>ဗီဒီယို ရရှိပါပြီ!</b>\nအောက်ပါ Tools များမှ လိုအပ်သည်ကို ရွေးချယ်ပါ -",
+            parse_mode="HTML",
+            reply_markup=reply_markup
+        )
+
+# ၄။ Link ပို့လာပါက ဒေါင်းလုပ်ဆွဲပြီး ဗီဒီယိုနှင့် ခလုတ်များ ပို့ရန်
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text.strip()
     url_pattern = re.compile(r'https?://[^\s]+')
@@ -93,29 +120,13 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         try:
             file_path = download_video(user_text)
             await status_msg.delete()
-            
-            # Edit လုပ်ရန် ခလုတ်များ
-            keyboard = [
-                [InlineKeyboardButton("✍️ စာသားထည့်ရန်", callback_data="add_text"),
-                 InlineKeyboardButton("🛡️ Blur လုပ်ရန်", callback_data="add_blur")],
-                [InlineKeyboardButton("✂️ Recap ပြုလုပ်ရန်", callback_data="make_recap")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            # ဗီဒီယိုကို တကယ်ပြန်ပို့ခြင်း
-            with open(file_path, 'rb') as video_file:
-                await update.message.reply_video(
-                    video=video_file,
-                    caption="✅ <b>ဗီဒီယို ဒေါင်းလုပ်ဆွဲပြီးပါပြီ!</b>\nအောက်ပါတို့မှ လိုအပ်သည်ကို ရွေးချယ်ပါ -",
-                    parse_mode="HTML",
-                    reply_markup=reply_markup
-                )
+            await send_video_with_editor_buttons(update, file_path)
         except Exception as e:
             await status_msg.edit_text(f"❌ <b>ဒေါင်းလုပ်ဆွဲရာတွင် အမှားအယွင်းရှိပါသည်:</b> {str(e)}", parse_mode="HTML")
     else:
         await send_welcome(update, context)
 
-# ၅။ Video File တိုက်ရိုက်တင်လာပါက သိမ်းဆည်းပြီး ဗီဒီယိုနှင့် ခလုတ်များ ပြန်ပို့ရန်
+# ၅။ Video File တိုက်ရိုက်တင်လာပါက သိမ်းဆည်းပြီး ဗီဒီယိုနှင့် ခလုတ်များ ပို့ရန်
 async def handle_video_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video = update.message.video or update.message.document
     status_msg = await update.message.reply_text("⏳ <b>ဗီဒီယိုဖိုင်ကို သိမ်းဆည်းနေပါသည်...</b>", parse_mode="HTML")
@@ -126,28 +137,11 @@ async def handle_video_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     final_filename = os.path.join(download_folder, "downloaded_video.mp4")
 
-    # Telegram ဆာဗာမှ ဗီဒီယိုဖိုင်ကို ရယူပြီး downloaded_video.mp4 အဖြစ် သိမ်းမည်
     file = await context.bot.get_file(video.file_id)
     await file.download_to_drive(final_filename)
     
     await status_msg.delete()
-
-    # Edit လုပ်ရန် ခလုတ်များ
-    keyboard = [
-        [InlineKeyboardButton("✍️ စာသားထည့်ရန်", callback_data="add_text"),
-         InlineKeyboardButton("🛡️ Blur လုပ်ရန်", callback_data="add_blur")],
-        [InlineKeyboardButton("✂️ Recap ပြုလုပ်ရန်", callback_data="make_recap")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    # ဗီဒီယိုကို တကယ်ပြန်ပို့ခြင်း
-    with open(final_filename, 'rb') as video_file:
-        await update.message.reply_video(
-            video=video_file,
-            caption="🎥 <b>ဗီဒီယိုဖိုင် လက်ခံရရှိပါပြီ!</b>\nအောက်ပါတို့မှ လိုအပ်သည်ကို ရွေးချယ်ပါ -",
-            parse_mode="HTML",
-            reply_markup=reply_markup
-        )
+    await send_video_with_editor_buttons(update, final_filename)
 
 # ၆။ Main Function
 def main():
