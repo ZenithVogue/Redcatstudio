@@ -48,13 +48,14 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         await query.message.reply_text(text=help_text, parse_mode="HTML")
 
-# ၃။ Video ဒေါင်းလုပ်ဆွဲပေးမည့် Function (yt-dlp)
+# ၃။ Video ဒေါင်းလုပ်ဆွဲပြီး နာမည်သစ်ပေးမည့် Function (yt-dlp)
 def download_video(url: str) -> str:
     download_folder = "downloads"
     if not os.path.exists(download_folder):
         os.makedirs(download_folder)
 
-    outtmpl = os.path.join(download_folder, "%(title)s.%(ext)s")
+    # နာမည်ရှုပ်မသွားအောင် ရိုးရိုးရှင်းရှင်း output template သုံးမည်
+    outtmpl = os.path.join(download_folder, "video_temp.%(ext)s")
 
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
@@ -66,7 +67,16 @@ def download_video(url: str) -> str:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
-        return filename
+        
+        # mp4 ဖြစ်အောင် သေချာစစ်ပြီး နာမည်ပြောင်းမည်
+        base, ext = os.path.splitext(filename)
+        final_filename = os.path.join(download_folder, "downloaded_video.mp4")
+        
+        if os.path.exists(final_filename):
+            os.remove(final_filename)
+            
+        os.rename(filename, final_filename)
+        return final_filename
 
 # ၄။ Link ပို့လာပါက ဒေါင်းလုပ်ဆွဲမည့် Function
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -79,7 +89,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         try:
             file_path = download_video(user_text)
-            await status_msg.edit_text(f"✅ <b>ဒေါင်းလုပ်ဆွဲပြီးပါပြီ!</b>\nfile: {file_path}", parse_mode="HTML")
+            await status_msg.edit_text(f"✅ <b>ဒေါင်းလုပ်ဆွဲပြီးပါပြီ!</b>\nဖိုင်သိမ်းဆည်းရာနေရာ: <code>{file_path}</code>", parse_mode="HTML")
         except Exception as e:
             await status_msg.edit_text(f"❌ <b>ဒေါင်းလုပ်ဆွဲရာတွင် အမှားအယွင်းရှိပါသည်:</b> {str(e)}", parse_mode="HTML")
     else:
@@ -97,7 +107,7 @@ async def handle_video_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
     await update.message.reply_text(text=response_text, parse_mode="HTML")
 
-# ၆။ Main Function (Bot Token အမှန်ထည့်ထားသည်)
+# ၆။ Main Function
 def main():
     TOKEN = "8409275681:AAFv3kejcXZykWU7IgZ-OObeVkTybw8eJkc"
     
