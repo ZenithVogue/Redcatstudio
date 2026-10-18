@@ -24,7 +24,7 @@ async def send_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     # သင့် Bot Token ကို ဒီမှာ ထည့်ပါ
-    app = ApplicationBuilder().token("YOUR_BOT_TOKEN_HERE").build()
+    app = ApplicationBuilder().token("8409275681:AAFv3kejcXZykWU7IgZ-OObeVkTybw8eJkc").build()
 
     # /start သို့မဟုတ် ဘာပဲရိုက်ရိုက် Welcome message ထွက်လာစေရန် Handler များ
     app.add_handler(CommandHandler("start", send_welcome))
