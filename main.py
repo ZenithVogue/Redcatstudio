@@ -1,162 +1,456 @@
-import os
-import re
-import yt_dlp
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import logging
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
-    filters,
+    CommandHandler,
     ContextTypes,
+    ConversationHandler,  # <-- ဒီဟာလေး ထည့်ပေးလိုက်တာပါ
+    MessageHandler,
+    filters,
 )
 
-# ၁။ Welcome Message ပေးပို့မည့် Function
-async def send_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = (
-        "<b>🎬 Red Cat Studio - Movie Recap & Video Editor Bot</b>\n\n"
-        "မင်္ဂလာပါ! 👋\n\n"
-        "📌 <b>စတင်ရန်:</b>\n"
-        "<b>YouTube</b>, <b>TikTok</b>, <b>RedNote</b> လင့်ခ်များ ပို့ပေးနိုင်သလို ဗီဒီယိုဖိုင်ကိုလည်း တိုက်ရိုက် Upload ပြုလုပ်ပြီး စတင်နိုင်ပါပြီ။"
-    )
-    
+# Logging Setup
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# States တွေ သတ်မှတ်ခြင်း (FSM)
+CHOOSING_MENU = 1
+BLUR_MENU = 2
+VOICE_MENU = 3
+FONT_MENU = 4
+SPEED_MENU = 5
+EFFECT_MENU = 6
+WATERMARK_MENU = 7
+WATERMARK_TEXT_INPUT = 8
+WATERMARK_LOGO_INPUT = 9
+
+
+# 1. ပင်မ မီနူး ခလုတ်များ (၆ ခု + Export ခလုတ် အနေအထား)
+def get_main_menu_keyboard(context: ContextTypes.DEFAULT_TYPE):
+    # အသံ (Voice) ရွေးထားပြီးပြီလား စစ်ဆေးခြင်း
+    voice_selected = context.user_data.get("selected_voice")
+
     keyboard = [
-        [InlineKeyboardButton("📖 အသုံးပြုနည်း လမ်းညွှန်", callback_data="help_guide")]
+        [
+            InlineKeyboardButton("🌫️ Blur", callback_data="menu_blur"),
+            InlineKeyboardButton(
+                f"🎙️ အသံ: {voice_selected if voice_selected else 'မရွေးရသေး'}",
+                callback_data="menu_voice",
+            ),
+        ],
+        [
+            InlineKeyboardButton("🔤 Font", callback_data="menu_font"),
+            InlineKeyboardButton("⚡ Speed", callback_data="menu_speed"),
+        ],
+        [
+            InlineKeyboardButton("✨ Effect", callback_data="menu_effect"),
+            InlineKeyboardButton("💧 Watermark", callback_data="menu_watermark"),
+        ],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # အသံ ရွေးပြီးမှသာ ၇ ခုမြောက် Final Export ခလုတ် ပေါ်လာစေရန်
+    if voice_selected:
+        keyboard.append(
+            [InlineKeyboardButton("🚀 Final Video ထုတ်မည်", callback_data="final_export")]
+        )
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+# Start Command - ဗီဒီယို ပို့ရန် တောင်းဆိုခြင်း
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()  # Data အဟောင်းများ ရှင်းလင်းရန်
+    await update.message.reply_text(
+        "မင်္ဂလာပါ ဘရို! 🎉 ဗီဒီယို တည်းဖြတ်မည့် Bot မှ ကြိုဆိုပါတယ်။ ကျေးဇူးပြု၍ တည်းဖြတ်မည့် ဗီဒီယိုဖိုင်ကို ပို့ပေးပါ။"
+    )
+    return CHOOSING_MENU
+
+
+# ဗီဒီယို လက်ခံရရှိချိန်
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    video = update.message.video or update.message.document
+    if not video:
+        await update.message.reply_text("ကျေးဇူးပြု၍ ဗီဒီယိုဖိုင် မှန်ကန်စွာ ပို့ပေးပါ။")
+        return CHOOSING_MENU
+
+    context.user_data["video_file_id"] = video.file_id
 
     await update.message.reply_text(
-        text=welcome_text,
-        parse_mode="HTML",
-        reply_markup=reply_markup
+        "ဗီဒီယို လက်ခံရရှိပါပြီ။ အောက်ပါ မီနူးများမှ လိုအပ်သည်များကို ရွေးချယ်ပါ -",
+        reply_markup=get_main_menu_keyboard(context),
     )
+    return CHOOSING_MENU
 
-# ၂။ ခလုတ်နှိပ်သည့်အခါများကို ထိန်းချုပ်မည့် Function
-async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+# --- ပင်မ မီနူး ခလုတ်များ နှိပ်သည့်အခါ ---
+async def main_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    data = query.data
 
-    if query.data == "help_guide":
-        help_text = (
-            "📖 <b>Red Cat Studio Bot အသုံးပြုနည်း အသေးစိတ် လမ်းညွှန်</b>\n\n"
-            "ဗီဒီယို လင့်ခ် သို့မဟုတ် ဖိုင်ပို့လိုက်ပါက ဗီဒီယို Preview နှင့်အတူ အောက်ပါ တည်းဖြတ်ရန် ခလုတ်များ ပေါ်လာပါမည်."
+    if data == "menu_blur":
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "📌 Static Text Blur", callback_data="blur_static"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "💬 Subtitle Blur", callback_data="blur_subtitle"
+                )
+            ],
+            [InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")],
+        ]
+        await query.edit_message_text(
+            "🌫️ **Blur မီနူး**\nလိုအပ်သော Blur ပုံစံကို ရွေးချယ်ပါ -",
+            reply_markup=InlineKeyboardMarkup(keyboard),
         )
-        await query.message.reply_text(text=help_text, parse_mode="HTML")
-    
-    elif query.data == "blur_btn":
-        await query.message.reply_text("🛡️ **Blur Button:** ဗီဒီယိုထဲရှိ စာသားဆိုးများကို Blur လုပ်ပေးမည့် လုပ်ဆောင်ချက်။", parse_mode="HTML")
-    elif query.data == "text_btn":
-        await query.message.reply_text("✍️ **စာသား Button:** ဗီဒီယိုပေါ်တွင် စာသားများ ပေါ်လာစေရန် လုပ်ဆောင်ချက်။", parse_mode="HTML")
-    elif query.data == "font_btn":
-        await query.message.reply_text("🔤 **မြန်မာစာသ် font Button:** Font အမျိုးအစားနှင့် နောက်ခံ ပုံစံများကို ရွေးချယ်ရန်။", parse_mode="HTML")
-    elif query.data == "speed_btn":
-        await query.message.reply_text("⏩ **စာသ် speed Button:** ဗီဒီယို အမြန်နှုန်း (Speed) ကို ချိန်ညှိရန်။", parse_mode="HTML")
-    elif query.data == "mirror_btn":
-        await query.message.reply_text("🔄 **Mirror Button:** ဗီဒီယိုကို ဘယ်ညာ တစောင်း (Mirror) လှည့်ရန်။", parse_mode="HTML")
-    elif query.data == "watermark_btn":
-        await query.message.reply_text("💧 **Add Your Watermark Button:** ကိုယ်ပိုင် Logo သို့မဟုတ် Watermark ထည့်သွင်းရန်။", parse_mode="HTML")
+        return BLUR_MENU
 
-# ၃။ Video ဒေါင်းလုပ်ဆွဲပြီး နာမည်သစ်ပေးမည့် Function (yt-dlp)
-def download_video(url: str) -> str:
-    download_folder = "downloads"
-    if not os.path.exists(download_folder):
-        os.makedirs(download_folder)
+    elif data == "menu_voice":
+        keyboard = [
+            [
+                InlineKeyboardButton("👤 သီဟ (▶️)", callback_data="voice_thihah"),
+                InlineKeyboardButton("👤 နီလာ (▶️)", callback_data="voice_nilar"),
+            ],
+            [
+                InlineKeyboardButton(
+                    "👤 ကျော်ကြီး (▶️)", callback_data="voice_kyawgyi"
+                ),
+                InlineKeyboardButton(
+                    "👤 အောင်အောင် (▶️)", callback_data="voice_aungaung"
+                ),
+            ],
+            [
+                InlineKeyboardButton("👤 အေးအေး (▶️)", callback_data="voice_ayee"),
+                InlineKeyboardButton(
+                    "👤 အေးကျော် (▶️)", callback_data="voice_ayekyaw"
+                ),
+            ],
+            [InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")],
+        ]
+        await query.edit_message_text(
+            "🎙️ **အသံ (Voice) မီနူး**\nအသံ ကာရိုက်တာကို ရွေးချယ်ပါ -",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return VOICE_MENU
 
-    outtmpl = os.path.join(download_folder, "video_temp.%(ext)s")
+    elif data == "menu_font":
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "Pyidaungsu (👁️ Preview)", callback_data="font_pyidaungsu"
+                ),
+                InlineKeyboardButton(
+                    "Padauk (👁️ Preview)", callback_data="font_padauk"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "Taythan (👁️ Preview)", callback_data="font_taythan"
+                ),
+                InlineKeyboardButton(
+                    "Zawgyi (👁️ Preview)", callback_data="font_zawgyi"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "Serif (👁️ Preview)", callback_data="font_serif"
+                ),
+                InlineKeyboardButton(
+                    "Bold (👁️ Preview)", callback_data="font_bold"
+                ),
+            ],
+            [InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")],
+        ]
+        await query.edit_message_text(
+            "🔤 **Font မီနူး**\nကြိုက်နှစ်သက်ရာ Font ကို ရွေးချယ်ပါ -",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return FONT_MENU
 
-    ydl_opts = {
-        'format': 'best',
-        'outtmpl': outtmpl,
-        'quiet': True,
-        'no_warnings': True,
-        'geo_bypass': True,
+    elif data == "menu_speed":
+        keyboard = [
+            [
+                InlineKeyboardButton("🐢 နှေးနှေး (0.75x) (▶️)", callback_data="speed_0.75"),
+                InlineKeyboardButton("🚶 ပုံမှန် (1.0x) (▶️)", callback_data="speed_1.0"),
+            ],
+            [
+                InlineKeyboardButton("🏃 မြန်ဆန် (1.25x) (▶️)", callback_data="speed_1.25"),
+                InlineKeyboardButton("⬅️ Back", callback_data="back_to_main"),
+            ],
+        ]
+        await query.edit_message_text(
+            "⚡ **Speed မီနူး**\nဗီဒီယို အမြန်/အနှေး နှုန်းထား ရွေးချယ်ပါ -",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return SPEED_MENU
+
+    elif data == "menu_effect":
+        # Toggle အခြေအနေများ ပြသရန်
+        mirror_on = context.user_data.get("effect_mirror", False)
+        clean_on = context.user_data.get("effect_clean", False)
+
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    f"{'✅' if mirror_on else '❌'} Mirror Effect",
+                    callback_data="toggle_mirror",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    f"{'✅' if clean_on else '❌'} Clean Effect",
+                    callback_data="toggle_clean",
+                )
+            ],
+            [InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")],
+        ]
+        await query.edit_message_text(
+            "✨ **Effect မီနူး**\nလိုချင်သော Effect များကို ဖွင့်/ပိတ် လုပ်ပါ -",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return EFFECT_MENU
+
+    elif data == "menu_watermark":
+        keyboard = [
+            [InlineKeyboardButton("✍️ Text Watermark", callback_data="wm_text")],
+            [InlineKeyboardButton("🖼️ Logo Watermark", callback_data="wm_logo")],
+            [InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")],
+        ]
+        await query.edit_message_text(
+            "💧 **Watermark မီနူး**\nထည့်သွင်းမည့် ပုံစံကို ရွေးချယ်ပါ -",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return WATERMARK_MENU
+
+    elif data == "final_export":
+        await query.edit_message_text(
+            "⏳ **ဗီဒီယို ထုတ်လုပ်နေပါပြီ (Rendering)...** ကျေးဇူးပြု၍ ခဏစောင့်ပါ ဘရို။"
+        )
+        # ဤနေရာတွင် FFmpeg ဖြင့် ဗီဒီယို ပေါင်းစပ်ထုတ်လုပ်သည့် Code ထည့်သွင်းရန်
+        # ပြီးပါက ဗီဒီယိုအသစ် ပြန်ပို့ပေးမည်။
+        return CHOOSING_MENU
+
+    return CHOOSING_MENU
+
+
+# --- Back to Main Menu Helper ---
+async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "ပင်မ မီနူးသို့ ပြန်ရောက်ပါပြီ။ ဆက်လက် လုပ်ဆောင်ရန် ရွေးချယ်ပါ -",
+        reply_markup=get_main_menu_keyboard(context),
+    )
+    return CHOOSING_MENU
+
+
+# --- 1. Blur Sub-menu Handler ---
+async def blur_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "back_to_main":
+        return await back_to_main(update, context)
+
+    if data == "blur_static":
+        context.user_data["blur_type"] = "Static Text Blur"
+        await query.answer("Static Text Blur ကို ရွေးချယ်ပြီးပါပြီ ✅", show_alert=True)
+    elif data == "blur_subtitle":
+        context.user_data["blur_type"] = "Subtitle Blur"
+        await query.answer("Subtitle Blur ကို ရွေးချယ်ပြီးပါပြီ ✅", show_alert=True)
+
+    return BLUR_MENU
+
+
+# --- 2. Voice Sub-menu Handler ---
+async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "back_to_main":
+        return await back_to_main(update, context)
+
+    # ဥပမာ - အသံတစ်ခုကို နှိပ်လိုက်ခြင်း
+    voice_map = {
+        "voice_thihah": "သီဟ",
+        "voice_nilar": "နီလာ",
+        "voice_kyawgyi": "ကျော်ကြီး",
+        "voice_aungaung": "အောင်အောင်",
+        "voice_ayee": "အေးအေး",
+        "voice_ayekyaw": "အေးကျော်",
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filename = ydl.prepare_filename(info)
-        
-        final_filename = os.path.join(download_folder, "downloaded_video.mp4")
-        
-        if os.path.exists(final_filename):
-            os.remove(final_filename)
-            
-        os.rename(filename, final_filename)
-        return final_filename
+    if data in voice_map:
+        selected_name = voice_map[data]
+        context.user_data["selected_voice"] = selected_name
+        await query.answer(f"အသံ - {selected_name} ကို ရွေးချယ်ပြီးပါပြီ ✅", show_alert=True)
 
-# ဗီဒီယိုနှင့်အတူ ခလုတ် ၆ ခုကို ပြန်ပို့ပေးမည့် Helper Function
-async def send_video_with_editor_buttons(update: Update, file_path: str):
+        # အသံရွေးပြီးတာနဲ့ ပင်မမီနူးကို ပြန်သွားမယ် (Export ခလုတ် အလိုအလျောက် ပေါ်လာမည်)
+        await query.edit_message_text(
+            f"🎙️ ရွေးချယ်ထားသော အသံ: **{selected_name}**\n\nပင်မ မီနူးသို့ ပြန်ရောက်ပါပြီ။ (အောက်ဆုံးတွင် Final Export ခလုတ် ပေါ်လာပါပြီ)",
+            reply_markup=get_main_menu_keyboard(context),
+        )
+        return CHOOSING_MENU
+
+    return VOICE_MENU
+
+
+# --- 3. Font Sub-menu Handler ---
+async def font_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "back_to_main":
+        return await back_to_main(update, context)
+
+    if data.startswith("font_"):
+        font_name = data.split("_")[1]
+        context.user_data["selected_font"] = font_name
+        await query.answer(f"Font ({font_name}) Preview ကို ပြသနေပါသည်။", show_alert=True)
+
+    return FONT_MENU
+
+
+# --- 4. Speed Sub-menu Handler ---
+async def speed_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "back_to_main":
+        return await back_to_main(update, context)
+
+    if data.startswith("speed_"):
+        speed_val = data.split("_")[1]
+        context.user_data["selected_speed"] = speed_val
+        await query.answer(f"Speed ({speed_val}x) ကို သတ်မှတ်ပြီးပါပြီ ✅", show_alert=True)
+
+    return SPEED_MENU
+
+
+# --- 5. Effect Sub-menu Handler ---
+async def effect_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "back_to_main":
+        return await back_to_main(update, context)
+
+    if data == "toggle_mirror":
+        current = context.user_data.get("effect_mirror", False)
+        context.user_data["effect_mirror"] = not current
+    elif data == "toggle_clean":
+        current = context.user_data.get("effect_clean", False)
+        context.user_data["effect_clean"] = not current
+
+    # Update UI with new toggles
+    mirror_on = context.user_data.get("effect_mirror", False)
+    clean_on = context.user_data.get("effect_clean", False)
+
     keyboard = [
         [
-            InlineKeyboardButton("1️⃣ Blur", callback_data="blur_btn"),
-            InlineKeyboardButton("2️⃣ စာသား", callback_data="text_btn")
+            InlineKeyboardButton(
+                f"{'✅' if mirror_on else '❌'} Mirror Effect",
+                callback_data="toggle_mirror",
+            )
         ],
         [
-            InlineKeyboardButton("3️⃣ မြန်မာစာ font", callback_data="font_btn"),
-            InlineKeyboardButton("4️⃣ စာသ် speed", callback_data="speed_btn")
+            InlineKeyboardButton(
+                f"{'✅' if clean_on else '❌'} Clean Effect",
+                callback_data="toggle_clean",
+            )
         ],
-        [
-            InlineKeyboardButton("5️⃣ mirror", callback_data="mirror_btn"),
-            InlineKeyboardButton("6️⃣ Watermark", callback_data="watermark_btn")
-        ]
+        [InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        "✨ **Effect မီနူး**\nလိုချင်သော Effect များကို ဖွင့်/ပိတ် လုပ်ပါ -",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return EFFECT_MENU
 
-    with open(file_path, 'rb') as video_file:
-        await update.message.reply_video(
-            video=video_file,
-            caption="🎬 <b>ဗီဒီယို ရရှိပါပြီ!</b>\nအောက်ပါ Tools များမှ လိုအပ်သည်ကို ရွေးချယ်ပါ -",
-            parse_mode="HTML",
-            reply_markup=reply_markup
+
+# --- 6. Watermark Sub-menu Handler ---
+async def watermark_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "back_to_main":
+        return await back_to_main(update, context)
+
+    if data == "wm_text":
+        context.user_data["wm_mode"] = "text"
+        await query.edit_message_text(
+            "✍️ ကျေးဇူးပြု၍ ဗီဒီယိုပေါ်တွင် တင်ချင်သည့် **Watermark စာသား** ကို ရိုက်၍ ပို့ပေးပါ။\n\n(နောက်သို့ပြန်ရန် /cancel ကိုနှိပ်ပါ)"
         )
+        return WATERMARK_TEXT_INPUT
 
-# ၄။ Link ပို့လာပါက ဒေါင်းလုပ်ဆွဲပြီး ဗီဒီယိုနှင့် ခလုတ်များ ပို့ရန်
-async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text.strip()
-    url_pattern = re.compile(r'https?://[^\s]+')
-    
-    if url_pattern.search(user_text):
-        status_msg = await update.message.reply_text("⏳ <b>ဗီဒီယိုကို စတင် ဒေါင်းလုပ်ဆွဲနေပါသည်...</b>", parse_mode="HTML")
-        
-        try:
-            file_path = download_video(user_text)
-            await status_msg.delete()
-            await send_video_with_editor_buttons(update, file_path)
-        except Exception as e:
-            await status_msg.edit_text(f"❌ <b>ဒေါင်းလုပ်ဆွဲရာတွင် အမှားအယွင်းရှိပါသည်:</b> {str(e)}", parse_mode="HTML")
-    else:
-        await send_welcome(update, context)
+    elif data == "wm_logo":
+        context.user_data["wm_mode"] = "logo"
+        await query.edit_message_text(
+            "🖼️ ကျေးဇူးပြု၍ Watermark အဖြစ် ထည့်မည့် **Logo ပုံ (Image)** ကို ပို့ပေးပါ။"
+        )
+        return WATERMARK_LOGO_INPUT
 
-# ၅။ Video File တိုက်ရိုက်တင်လာပါက သိမ်းဆည်းပြီး ဗီဒီယိုနှင့် ခလုတ်များ ပို့ရန်
-async def handle_video_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    video = update.message.video or update.message.document
-    status_msg = await update.message.reply_text("⏳ <b>ဗီဒီယိုဖိုင်ကို သိမ်းဆည်းနေပါသည်...</b>", parse_mode="HTML")
+    return WATERMARK_MENU
 
-    download_folder = "downloads"
-    if not os.path.exists(download_folder):
-        os.makedirs(download_folder)
-    
-    final_filename = os.path.join(download_folder, "downloaded_video.mp4")
 
-    file = await context.bot.get_file(video.file_id)
-    await file.download_to_drive(final_filename)
-    
-    await status_msg.delete()
-    await send_video_with_editor_buttons(update, final_filename)
+# Text Watermark Input လက်ခံခြင်း
+async def save_watermark_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    context.user_data["watermark_text"] = text
 
-# ၆။ Main Function
+    await update.message.reply_text(
+        f"✅ Watermark စာသား ('{text}') ကို သိမ်းဆည်းပြီးပါပြီ။\n\nအကြီးအသေး၊ တည်နေရာနှင့် အလင်းအမှောင် ချိန်ညှိချက်များ ဆက်လက်လုပ်ဆောင်နိုင်ပါပြီ။",
+        reply_markup=get_main_menu_keyboard(context),
+    )
+    return CHOOSING_MENU
+
+
+# Main Function
 def main():
-    TOKEN = "8409275681:AAFv3kejcXZykWU7IgZ-OObeVkTybw8eJkc"
-    
+    # ကိုယ့် Bot Token ကို ထည့်ရန်
+    TOKEN = "8409275681:AAFPvKtG7I7MUqsX4mPEnjwLl_aNDwoEP64"
+
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", send_welcome))
-    app.add_handler(CallbackQueryHandler(button_click_handler))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_message))
-    app.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video_upload))
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            CHOOSING_MENU: [
+                MessageHandler(
+                    filters.VIDEO | filters.Document.VIDEO, handle_video
+                ),
+                CallbackQueryHandler(main_menu_handler),
+            ],
+            BLUR_MENU: [CallbackQueryHandler(blur_handler)],
+            VOICE_MENU: [CallbackQueryHandler(voice_handler)],
+            FONT_MENU: [CallbackQueryHandler(font_handler)],
+            SPEED_MENU: [CallbackQueryHandler(speed_handler)],
+            EFFECT_MENU: [CallbackQueryHandler(effect_handler)],
+            WATERMARK_MENU: [CallbackQueryHandler(watermark_handler)],
+            WATERMARK_TEXT_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, save_watermark_text)
+            ],
+        },
+        fallbacks=[CommandHandler("start", start)],
+    )
 
-    print("Bot is running...")
+    app.add_handler(conv_handler)
+
+    print("🤖 Bot စတင် အလုပ်လုပ်နေပါပြီ...")
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
